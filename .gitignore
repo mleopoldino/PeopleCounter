@@ -60,3 +60,5 @@ data/samples/*
 # Jupyter
 .ipynb_checkpoints/
 
+
+yolov8n.pt
