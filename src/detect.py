@@ -7,6 +7,7 @@ computer vision model (e.g., YOLOv8) to detect people in an image frame.
 
 from __future__ import annotations
 
+import logging
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -54,7 +55,9 @@ class PersonDetector:
             try:
                 self.model.to(self.device)
             except Exception as e:
-                print(f"Error moving model to device {self.device}: {e}")
+                logging.getLogger(__name__).warning(
+                    "Failed to move model to device %s: %s", self.device, e
+                )
 
     def predict(
         self, frame: np.ndarray
@@ -81,7 +84,6 @@ class PersonDetector:
             classes=[0],
             conf=self.conf,
             iou=self.iou,
-            device=self.device,
             verbose=False,
         )
 
@@ -91,8 +93,12 @@ class PersonDetector:
         person_detections = detections[detections.class_id == 0]
 
         output: List[Tuple[float, float, float, float, float]] = []
-        for xyxy, confidence in zip(person_detections.xyxy, person_detections.confidence):
+        for xyxy, confidence in zip(
+            person_detections.xyxy, person_detections.confidence
+        ):
             x1, y1, x2, y2 = xyxy
-            output.append((float(x1), float(y1), float(x2), float(y2), float(confidence)))
+            output.append(
+                (float(x1), float(y1), float(x2), float(y2), float(confidence))
+            )
 
         return output
