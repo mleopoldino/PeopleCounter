@@ -41,6 +41,12 @@ def parse_args() -> argparse.Namespace:
         help="Intersection over Union (IoU) threshold for NMS (0.0 to 1.0)",
     )
     ap.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Inference image size (e.g., 640)",
+    )
+    ap.add_argument(
         "--device",
         type=str,  # Changed to Optional[str] in spirit, but argparse handles it
         default=None,
@@ -65,7 +71,7 @@ def main() -> None:
     print(f"Configuração: conf={args.conf}, iou={args.iou}, device={args.device}")
 
     detector = PersonDetector(
-        conf=args.conf, iou=args.iou, device=args.device, imgsz=640
+        conf=args.conf, iou=args.iou, device=args.device, imgsz=args.imgsz
     )
 
     source = int(args.source) if args.source.isdigit() else args.source
@@ -78,25 +84,26 @@ def main() -> None:
 
     last_print_time = time.time()
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("End of video stream.")
-            break
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("End of video stream.")
+                break
 
-        detections = detector.predict(frame)
+            detections = detector.predict(frame)
 
-        current_time = time.time()
-        if current_time - last_print_time >= 1.0:
-            print(f"Pessoas detectadas: {len(detections)}")
-            last_print_time = current_time
+            current_time = time.time()
+            if current_time - last_print_time >= 1.0:
+                print(f"Pessoas detectadas: {len(detections)}")
+                last_print_time = current_time
 
-        cv2.imshow("People Counter - press q to quit", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
+            cv2.imshow("People Counter - press q to quit", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
