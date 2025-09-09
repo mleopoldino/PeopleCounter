@@ -11,8 +11,14 @@ import time
 
 import cv2
 
-from detect import PersonDetector
-from track import MultiObjectTracker
+try:
+    from src.detect import PersonDetector
+    from src.track import MultiObjectTracker
+    from src.zones import LineCounter, RoiCounter
+except ImportError:
+    from detect import PersonDetector
+    from track import MultiObjectTracker
+    from zones import LineCounter, RoiCounter
 
 
 def parse_args() -> argparse.Namespace:
@@ -87,27 +93,46 @@ def main() -> None:
         if not cap.isOpened():
             raise ConnectionError(f"Failed to open video source: {args.source}")
 
+        ret, frame = cap.read()
+        if not ret:
+            raise ConnectionError("Failed to read first frame from source.")
+
+        h, w = frame.shape[:2]
+        lc = LineCounter(point_a=(0, h // 2), point_b=(w, h // 2))
+        rc = RoiCounter(
+            polygon=[
+                (int(0.3 * w), int(0.3 * h)),
+                (int(0.7 * w), int(0.3 * h)),
+                (int(0.7 * w), int(0.7 * h)),
+                (int(0.3 * w), int(0.7 * h)),
+            ]
+        )
+
         last_print_time = time.time()
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("End of video stream.")
-                break
-
+        while ret:
             detections = detector.predict(frame)
             tracks = tracker.update(frame, detections)
+            line_counts = lc.update(tracks)
+            roi_counts = rc.update(tracks)
 
             current_time = time.time()
             if current_time - last_print_time >= 1.0:
                 print(
-                    f"Pessoas detectadas: {len(detections)} | IDs ativos: {len(tracks)}"
+                    f"Pessoas detectadas: {len(detections)} | "
+                    f"IDs ativos: {len(tracks)} | "
+                    f"A→B: {line_counts['a_to_b']} | "
+                    f"B→A: {line_counts['b_to_a']} | "
+                    f"ROI (presente/únicos): {roi_counts['present']}/"
+                    f"{roi_counts['unique_ids']}"
                 )
                 last_print_time = current_time
 
             cv2.imshow("People Counter - press q to quit", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+
+            ret, frame = cap.read()
 
     except (ConnectionError, Exception) as e:
         sys.exit(f"Error: {e}")
