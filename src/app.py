@@ -1,17 +1,18 @@
 """
 app.py - Entry point for People Counter MVP
+
 - Parses CLI args
-- Initializes detector
-- Opens a video source, runs detection, and displays frames
+- Initializes detector and tracker
+- Opens a video source, runs detection and tracking, and displays frames
 """
 import argparse
 import sys
 import time
-from typing import Optional
 
 import cv2
 
 from detect import PersonDetector
+from track import MultiObjectTracker
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,16 +42,16 @@ def parse_args() -> argparse.Namespace:
         help="Intersection over Union (IoU) threshold for NMS (0.0 to 1.0)",
     )
     ap.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device to run inference on, e.g., 'cpu' or 'cuda:0'",
+    )
+    ap.add_argument(
         "--imgsz",
         type=int,
         default=640,
-        help="Inference image size (e.g., 640)",
-    )
-    ap.add_argument(
-        "--device",
-        type=str,  # Changed to Optional[str] in spirit, but argparse handles it
-        default=None,
-        help="Device to run inference on, e.g., 'cpu' or 'cuda:0'",
+        help="Image size for inference in pixels (e.g., 640)",
     )
     return ap.parse_args()
 
@@ -59,7 +60,8 @@ def main() -> None:
     """
     Main function to run the people counter application.
 
-    Initializes detector, captures video, runs prediction, and displays output.
+    Initializes detector and tracker, captures video, runs prediction and tracking,
+    and displays output.
     """
     args = parse_args()
 
@@ -68,23 +70,25 @@ def main() -> None:
     if not (0.0 <= args.iou <= 1.0):
         sys.exit("Error: --iou value must be between 0.0 and 1.0.")
 
-    print(f"Configuração: conf={args.conf}, iou={args.iou}, device={args.device}")
+    print(
+        f"Configuração: conf={args.conf}, iou={args.iou}, "
+        f"device={args.device}, imgsz={args.imgsz}"
+    )
 
     detector = PersonDetector(
         conf=args.conf, iou=args.iou, device=args.device, imgsz=args.imgsz
     )
+    tracker = MultiObjectTracker()
 
     source = int(args.source) if args.source.isdigit() else args.source
+    cap = None
     try:
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
             raise ConnectionError(f"Failed to open video source: {args.source}")
-    except (ConnectionError, Exception) as e:
-        sys.exit(f"Error: {e}")
 
-    last_print_time = time.time()
+        last_print_time = time.time()
 
-    try:
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -92,17 +96,24 @@ def main() -> None:
                 break
 
             detections = detector.predict(frame)
+            tracks = tracker.update(frame, detections)
 
             current_time = time.time()
             if current_time - last_print_time >= 1.0:
-                print(f"Pessoas detectadas: {len(detections)}")
+                print(
+                    f"Pessoas detectadas: {len(detections)} | IDs ativos: {len(tracks)}"
+                )
                 last_print_time = current_time
 
             cv2.imshow("People Counter - press q to quit", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+
+    except (ConnectionError, Exception) as e:
+        sys.exit(f"Error: {e}")
     finally:
-        cap.release()
+        if cap:
+            cap.release()
         cv2.destroyAllWindows()
 
 
