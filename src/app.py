@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -34,6 +35,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="0",
         help="Video source (0=webcam, path, url)",
+    )
+    ap.add_argument(
+        "--model",
+        type=str,
+        default="yolov8n.pt",
+        help="Name of the YOLO model file (e.g., yolov8n.pt, yolov8s.pt)",
     )
     ap.add_argument(
         "--conf",
@@ -89,12 +96,16 @@ def main() -> None:
         sys.exit("Error: --iou value must be between 0.0 and 1.0.")
 
     print(
-        f"Configuração: conf={args.conf}, iou={args.iou}, "
+        f"Configuração: model={args.model}, conf={args.conf}, iou={args.iou}, "
         f"device={args.device}, imgsz={args.imgsz}"
     )
 
     detector = PersonDetector(
-        conf=args.conf, iou=args.iou, device=args.device, imgsz=args.imgsz
+        model_name=args.model,
+        conf=args.conf,
+        iou=args.iou,
+        device=args.device,
+        imgsz=args.imgsz,
     )
     tracker = MultiObjectTracker()
     annotator = Annotator()
@@ -107,6 +118,7 @@ def main() -> None:
         "line_out",
         "roi_current",
         "roi_unique",
+        "fps_processing",
     ]
 
     source = int(args.source) if args.source.isdigit() else args.source
@@ -116,6 +128,8 @@ def main() -> None:
     total_line_in = 0
     total_line_out = 0
     last_roi_counts = {"present": 0, "unique_ids": 0}
+    processing_fps = 0
+    fps_buffer = deque(maxlen=30)  # Buffer for averaging FPS over ~1 second
 
     try:
         cap = cv2.VideoCapture(source)
@@ -138,6 +152,8 @@ def main() -> None:
         )
 
         while ret:
+            start_time = time.perf_counter()
+
             frame_count += 1
             detections = detector.predict(frame)
             tracks = tracker.update(frame, detections)
@@ -147,6 +163,13 @@ def main() -> None:
             total_line_out += line_counts_delta["b_to_a"]
 
             last_roi_counts = rc.update(tracks)
+
+            # --- FPS Calculation ---
+            end_time = time.perf_counter()
+            fps = 1.0 / (end_time - start_time)
+            fps_buffer.append(fps)
+            if len(fps_buffer) == fps_buffer.maxlen:
+                processing_fps = round(sum(fps_buffer) / len(fps_buffer))
 
             # --- Visualizations ---
             frame = annotator.annotate(
@@ -161,7 +184,7 @@ def main() -> None:
             black_color = (0, 0, 0)
 
             metrics_text = (
-                f"Pessoas: {len(detections)} | IDs: {len(tracks)} | "
+                f"FPS: {processing_fps} | Pessoas: {len(detections)} | IDs: {len(tracks)} | "
                 f"A->B: {total_line_in} | B->A: {total_line_out} | "
                 f"ROI: {last_roi_counts['present']}/{last_roi_counts['unique_ids']}"
             )
@@ -224,6 +247,7 @@ def main() -> None:
                     "line_out": total_line_out,
                     "roi_current": last_roi_counts["present"],
                     "roi_unique": last_roi_counts["unique_ids"],
+                    "fps_processing": processing_fps,
                 }
                 # Print JSON to stdout
                 print(json.dumps(metrics_data))

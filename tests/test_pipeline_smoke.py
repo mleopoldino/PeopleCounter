@@ -65,6 +65,7 @@ def test_app_main_smoke(app_module, monkeypatch, capsys):
 
     args = SimpleNamespace(
         source="dummy",
+        model="yolov8n.pt",
         conf=0.5,
         iou=0.4,
         device=None,

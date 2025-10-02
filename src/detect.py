@@ -27,6 +27,7 @@ class PersonDetector:
 
     def __init__(
         self,
+        model_name: str = "yolov8n.pt",
         conf: float = 0.35,
         iou: float = 0.45,
         imgsz: int = 640,
@@ -36,6 +37,8 @@ class PersonDetector:
         Initializes the PersonDetector.
 
         Args:
+            model_name (str): The name of the YOLO model file to use.
+                Defaults to "yolov8n.pt".
             conf (float): The confidence threshold for a detection to be
                 considered valid. Defaults to 0.35.
             iou (float): The Intersection over Union (IoU) threshold for
@@ -49,7 +52,7 @@ class PersonDetector:
         self.iou = iou
         self.imgsz = imgsz
         self.device = device
-        self.model = YOLO("yolov8n.pt")
+        self.model = YOLO(model_name)
         self.model.fuse()
         if self.device:
             try:
