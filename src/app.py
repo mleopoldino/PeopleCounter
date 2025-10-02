@@ -22,6 +22,34 @@ from .track import MultiObjectTracker
 from .zones import LineCounter, RoiCounter
 
 
+def validate_model_exists(model_name: str) -> bool:
+    """
+    Checks if the model file exists locally or is a known Ultralytics model.
+
+    Args:
+        model_name (str): The model name or path.
+
+    Returns:
+        bool: True if the model exists or is a valid Ultralytics model name.
+    """
+    # Check if it's a local file
+    if Path(model_name).exists():
+        return True
+
+    # Check if it's a standard Ultralytics model name
+    valid_models = [
+        "yolov8n.pt",
+        "yolov8s.pt",
+        "yolov8m.pt",
+        "yolov8l.pt",
+        "yolov8x.pt",
+    ]
+    if model_name in valid_models:
+        return True
+
+    return False
+
+
 def parse_args() -> argparse.Namespace:
     """
     Parses command-line arguments.
@@ -78,6 +106,33 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional: Path to JSON file to save final summary.",
     )
+    ap.add_argument(
+        "--line",
+        type=float,
+        nargs=4,
+        default=None,
+        metavar=("X1", "Y1", "X2", "Y2"),
+        help="Optional: Line coordinates for crossing counter (x1 y1 x2 y2).",
+    )
+    ap.add_argument(
+        "--roi",
+        type=float,
+        nargs="+",
+        default=None,
+        metavar="COORD",
+        help="Optional: ROI polygon coordinates (x1 y1 x2 y2 x3 y3 ...).",
+    )
+    ap.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without GUI (no cv2.imshow). Requires --output-video.",
+    )
+    ap.add_argument(
+        "--output-video",
+        type=str,
+        default=None,
+        help="Optional: Path to save annotated output video.",
+    )
     return ap.parse_args()
 
 
@@ -90,10 +145,29 @@ def main() -> None:
     """
     args = parse_args()
 
+    # Validate arguments
     if not (0.0 <= args.conf <= 1.0):
         sys.exit("Error: --conf value must be between 0.0 and 1.0.")
     if not (0.0 <= args.iou <= 1.0):
         sys.exit("Error: --iou value must be between 0.0 and 1.0.")
+
+    if not validate_model_exists(args.model):
+        sys.exit(
+            f"Error: Model '{args.model}' not found. "
+            "Please provide a valid model path or name (e.g., yolov8n.pt)."
+        )
+
+    if args.headless and not args.output_video:
+        sys.exit("Error: --headless mode requires --output-video to be specified.")
+
+    if args.roi and len(args.roi) < 6:
+        sys.exit(
+            "Error: --roi requires at least 3 points "
+            "(6 coordinates: x1 y1 x2 y2 x3 y3)."
+        )
+
+    if args.roi and len(args.roi) % 2 != 0:
+        sys.exit("Error: --roi requires an even number of coordinates (pairs of x y).")
 
     print(
         f"Configuração: model={args.model}, conf={args.conf}, iou={args.iou}, "
@@ -141,15 +215,55 @@ def main() -> None:
             raise ConnectionError("Failed to read first frame from source.")
 
         h, w = frame.shape[:2]
-        lc = LineCounter(point_a=(0, h // 2), point_b=(w, h // 2))
-        rc = RoiCounter(
-            polygon=[
-                (int(0.3 * w), int(0.3 * h)),
-                (int(0.7 * w), int(0.3 * h)),
-                (int(0.7 * w), int(0.7 * h)),
-                (int(0.3 * w), int(0.7 * h)),
+
+        # Validate and create line counter
+        if args.line:
+            x1, y1, x2, y2 = args.line
+            if not (0 <= x1 <= w and 0 <= x2 <= w):
+                sys.exit(f"Error: Line x coordinates must be between 0 and {w}.")
+            if not (0 <= y1 <= h and 0 <= y2 <= h):
+                sys.exit(f"Error: Line y coordinates must be between 0 and {h}.")
+            lc = LineCounter(point_a=(int(x1), int(y1)), point_b=(int(x2), int(y2)))
+        else:
+            # Default: horizontal line in the middle
+            lc = LineCounter(point_a=(0, h // 2), point_b=(w, h // 2))
+
+        # Validate and create ROI counter
+        if args.roi:
+            roi_points = [
+                (int(args.roi[i]), int(args.roi[i + 1]))
+                for i in range(0, len(args.roi), 2)
             ]
-        )
+            # Validate all points are within frame
+            for i, (x, y) in enumerate(roi_points):
+                if not (0 <= x <= w):
+                    sys.exit(
+                        f"Error: ROI point {i+1} x coordinate ({x}) "
+                        f"must be between 0 and {w}."
+                    )
+                if not (0 <= y <= h):
+                    sys.exit(
+                        f"Error: ROI point {i+1} y coordinate ({y}) "
+                        f"must be between 0 and {h}."
+                    )
+            rc = RoiCounter(polygon=roi_points)
+        else:
+            # Default: rectangle in the center
+            rc = RoiCounter(
+                polygon=[
+                    (int(0.3 * w), int(0.3 * h)),
+                    (int(0.7 * w), int(0.3 * h)),
+                    (int(0.7 * w), int(0.7 * h)),
+                    (int(0.3 * w), int(0.7 * h)),
+                ]
+            )
+
+        # Setup video writer if output is requested
+        video_writer = None
+        if args.output_video:
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            fps_out = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            video_writer = cv2.VideoWriter(args.output_video, fourcc, fps_out, (w, h))
 
         while ret:
             start_time = time.perf_counter()
@@ -184,8 +298,9 @@ def main() -> None:
             black_color = (0, 0, 0)
 
             metrics_text = (
-                f"FPS: {processing_fps} | Pessoas: {len(detections)} | IDs: {len(tracks)} | "
-                f"A->B: {total_line_in} | B->A: {total_line_out} | "
+                f"FPS: {processing_fps} | Pessoas: {len(detections)} | "
+                f"IDs: {len(tracks)} | A->B: {total_line_in} | "
+                f"B->A: {total_line_out} | "
                 f"ROI: {last_roi_counts['present']}/{last_roi_counts['unique_ids']}"
             )
             cv2.putText(
@@ -258,9 +373,15 @@ def main() -> None:
 
             metrics_emitter.tick(emit_metrics)
 
-            cv2.imshow("People Counter - press q to quit", frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+            # Write frame to output video if requested
+            if video_writer:
+                video_writer.write(frame)
+
+            # Display frame unless in headless mode
+            if not args.headless:
+                cv2.imshow("People Counter - press q to quit", frame)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
             ret, frame = cap.read()
 
@@ -269,7 +390,10 @@ def main() -> None:
     finally:
         if cap:
             cap.release()
-        cv2.destroyAllWindows()
+        if video_writer:
+            video_writer.release()
+        if not args.headless:
+            cv2.destroyAllWindows()
 
         # --- Final Summary ---
         if args.out and lc and rc:

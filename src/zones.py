@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Dict, List, Tuple
 import cv2
 import numpy as np
 
-
 if TYPE_CHECKING:
     from .track import Track
 

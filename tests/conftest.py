@@ -24,7 +24,9 @@ def _point_on_segment(
     return dot <= 0
 
 
-def _point_polygon_test(polygon: np.ndarray, point: Tuple[float, float], _: bool) -> int:
+def _point_polygon_test(
+    polygon: np.ndarray, point: Tuple[float, float], _: bool
+) -> int:
     """Simplistic substitute for cv2.pointPolygonTest."""
 
     coords: List[Tuple[float, float]] = [tuple(map(float, vert)) for vert in polygon]
@@ -79,9 +81,29 @@ class _FakeVideoCapture:
     def release(self) -> None:
         self._opened = False
 
+    def get(self, prop: int) -> float:
+        return 30.0 if prop == 5 else 0.0  # CAP_PROP_FPS = 5
+
+
+class _FakeVideoWriter:
+    def __init__(self, filename, fourcc, fps, frameSize):
+        self.filename = filename
+        self.fourcc = fourcc
+        self.fps = fps
+        self.frameSize = frameSize
+        self._opened = True
+
+    def write(self, frame: np.ndarray) -> None:
+        pass
+
+    def release(self) -> None:
+        self._opened = False
+
 
 cv2_stub = types.SimpleNamespace(
     VideoCapture=_FakeVideoCapture,
+    VideoWriter=_FakeVideoWriter,
+    VideoWriter_fourcc=lambda *args: 0x00000021,
     imshow=lambda *_args, **_kwargs: None,
     waitKey=lambda _timeout: -1,
     destroyAllWindows=lambda: None,
@@ -94,6 +116,7 @@ cv2_stub = types.SimpleNamespace(
     LINE_AA=16,
     IMREAD_COLOR=1,
     IMREAD_UNCHANGED=-1,
+    CAP_PROP_FPS=5,
     set_video_capture_frames=_set_video_capture_frames,
 )
 
@@ -130,4 +153,6 @@ def track_factory() -> "TrackFactory":
     return _build
 
 
-TrackFactory = Callable[[int, Tuple[float, float], Tuple[float, float]], Dict[str, float]]
+TrackFactory = Callable[
+    [int, Tuple[float, float], Tuple[float, float]], Dict[str, float]
+]

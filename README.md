@@ -90,6 +90,10 @@ Para executar a aplicação, utilize o comando `python -m src.app` a partir da r
 - `--imgsz <int>`: Tamanho da imagem para inferência em pixels (ex: `640`). Padrão: `640`.
 - `--csv <caminho_arquivo>`: Opcional. Caminho para um arquivo CSV onde as métricas serão logadas a cada segundo.
 - `--out <caminho_arquivo>`: Opcional. Caminho para um arquivo JSON onde um resumo final das contagens será salvo ao encerrar a aplicação.
+- `--line <x1 y1 x2 y2>`: Opcional. Coordenadas da linha para contagem de cruzamentos (4 valores: x1 y1 x2 y2). Se não especificado, usa linha horizontal no meio da tela.
+- `--roi <x1 y1 x2 y2 ...>`: Opcional. Coordenadas do polígono ROI (mínimo 6 valores para 3 pontos). Se não especificado, usa retângulo centralizado.
+- `--headless`: Opcional. Executa sem interface gráfica (sem cv2.imshow). Requer `--output-video`.
+- `--output-video <caminho_arquivo>`: Opcional. Caminho para salvar o vídeo anotado de saída.
 
 ### Exemplos de Execução
 
@@ -125,6 +129,12 @@ Para executar a aplicação, utilize o comando `python -m src.app` a partir da r
     ```bash
     python -m src.app --source 0 --model yolov8s.pt --conf 0.50
     ```
+
+7.  **Modo headless (sem GUI) com exportação de vídeo:**
+    ```bash
+    python -m src.app --source data/samples/video.mp4 --headless --output-video output.mp4
+    ```
+    *Útil para processamento em servidores sem interface gráfica.*
 
 ---
 
@@ -252,6 +262,10 @@ To run the application, use the command `python -m src.app` from the project roo
 - `--imgsz <int>`: Image size for inference in pixels (e.g., `640`). Default: `640`.
 - `--csv <file_path>`: Optional. Path to a CSV file where metrics will be logged every second.
 - `--out <file_path>`: Optional. Path to a JSON file where a final summary of counts will be saved upon application termination.
+- `--line <x1 y1 x2 y2>`: Optional. Line coordinates for crossing counter (4 values: x1 y1 x2 y2). If not specified, uses horizontal line at screen center.
+- `--roi <x1 y1 x2 y2 ...>`: Optional. ROI polygon coordinates (minimum 6 values for 3 points). If not specified, uses centered rectangle.
+- `--headless`: Optional. Run without GUI (no cv2.imshow). Requires `--output-video`.
+- `--output-video <file_path>`: Optional. Path to save annotated output video.
 
 ### Execution Examples
 
@@ -287,6 +301,12 @@ To run the application, use the command `python -m src.app` from the project roo
     ```bash
     python -m src.app --source 0 --model yolov8s.pt --conf 0.50
     ```
+
+7.  **Headless mode (no GUI) with video export:**
+    ```bash
+    python -m src.app --source data/samples/video.mp4 --headless --output-video output.mp4
+    ```
+    *Useful for processing on servers without a graphical interface.*
 
 ---
 

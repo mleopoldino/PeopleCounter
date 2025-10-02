@@ -15,6 +15,10 @@ Common flags:
 - `--conf 0.35` - detection confidence threshold (0.0-1.0)
 - `--iou 0.45` - IoU threshold for NMS
 - `--device cpu` or `--device cuda:0` - inference device
+- `--line x1 y1 x2 y2` - custom line coordinates for crossing counter
+- `--roi x1 y1 x2 y2 x3 y3 ...` - custom ROI polygon coordinates (min 3 points)
+- `--headless` - run without GUI (requires --output-video)
+- `--output-video output.mp4` - save annotated video to file
 - `--csv metrics.csv` - log metrics to CSV
 - `--out summary.json` - save final summary
 
@@ -114,9 +118,11 @@ RoiCounter uses the center of each bounding box:
 - `_seen` set accumulates all unique IDs ever inside ROI
 
 ## Important Notes
-- Application requires GUI for `cv2.imshow` - not suitable for headless servers without modification
+- Application supports headless mode with `--headless --output-video` for servers without GUI
 - YOLO models are downloaded automatically by Ultralytics on first use
+- Model validation checks for existence before initialization (local files or standard YOLOv8 models)
 - YOLOv8 models are AGPL-3 licensed, which affects derivative work licensing
 - The tracker keeps IDs stable across frames but may reassign after occlusions
 - FPS is averaged over 30 frames for stability
-- Press 'q' (with video window focused) to quit gracefully
+- Press 'q' (with video window focused) to quit gracefully in GUI mode
+- Line and ROI coordinates are validated against frame dimensions at runtime

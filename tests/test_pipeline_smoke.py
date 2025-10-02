@@ -72,6 +72,10 @@ def test_app_main_smoke(app_module, monkeypatch, capsys):
         imgsz=640,
         csv=None,
         out=None,
+        line=None,
+        roi=None,
+        headless=False,
+        output_video=None,
     )
     monkeypatch.setattr(app_module, "parse_args", lambda: args)
 
@@ -80,3 +84,32 @@ def test_app_main_smoke(app_module, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "Configuração" in captured.out
     assert any("line_in" in line for line in captured.out.splitlines())
+
+
+def test_app_with_custom_line_and_roi(app_module, monkeypatch, capsys):
+    """Test that custom --line and --roi arguments are properly used."""
+    import cv2
+
+    frames = [np.zeros((100, 100, 3), dtype=np.uint8) for _ in range(2)]
+    cv2.set_video_capture_frames(frames)
+
+    args = SimpleNamespace(
+        source="dummy",
+        model="yolov8n.pt",
+        conf=0.5,
+        iou=0.4,
+        device=None,
+        imgsz=640,
+        csv=None,
+        out=None,
+        line=[10.0, 10.0, 90.0, 90.0],  # Custom line
+        roi=[20.0, 20.0, 80.0, 20.0, 80.0, 80.0, 20.0, 80.0],  # Custom ROI
+        headless=False,
+        output_video=None,
+    )
+    monkeypatch.setattr(app_module, "parse_args", lambda: args)
+
+    app_module.main()
+
+    captured = capsys.readouterr()
+    assert "Configuração" in captured.out

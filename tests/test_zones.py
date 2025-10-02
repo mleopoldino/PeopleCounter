@@ -16,9 +16,7 @@ def horizontal_line_counter() -> LineCounter:
 def square_roi_counter() -> RoiCounter:
     """Square ROI with corners (0, 0) - (100, 100)."""
 
-    return RoiCounter(
-        polygon=[(0, 0), (100, 0), (100, 100), (0, 100)]
-    )
+    return RoiCounter(polygon=[(0, 0), (100, 0), (100, 100), (0, 100)])
 
 
 def test_line_counter_counts_a_to_b(horizontal_line_counter, track_factory):
