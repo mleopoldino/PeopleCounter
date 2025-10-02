@@ -8,7 +8,7 @@ stable IDs for detected objects across video frames.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple, TypedDict
+from typing import List, Tuple, TypedDict
 
 import numpy as np
 import supervision as sv
@@ -60,7 +60,9 @@ class MultiObjectTracker:
         self._tracker = sv.ByteTrack()
 
     def update(
-        self, frame: np.ndarray, detections: List[Tuple[float, float, float, float, float]]
+        self,
+        frame: np.ndarray,
+        detections: List[Tuple[float, float, float, float, float]],
     ) -> List[Track]:
         """
         Updates the tracker with a new frame and its detections.

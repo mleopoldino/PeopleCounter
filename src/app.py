@@ -5,23 +5,20 @@ app.py - Entry point for People Counter MVP
 - Initializes detector and tracker
 - Opens a video source, runs detection and tracking, and displays frames
 """
+
 import argparse
+import json
 import sys
 import time
+from pathlib import Path
 
 import cv2
-import numpy as np
 
-try:
-    from src.detect import PersonDetector
-    from src.track import MultiObjectTracker
-    from src.zones import LineCounter, RoiCounter
-    from src.draw import Annotator
-except ImportError:
-    from detect import PersonDetector
-    from track import MultiObjectTracker
-    from zones import LineCounter, RoiCounter
-    from draw import Annotator
+from .detect import PersonDetector
+from .draw import Annotator
+from .metrics import SecondBasedEmitter, append_to_csv, write_summary_json
+from .track import MultiObjectTracker
+from .zones import LineCounter, RoiCounter
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +59,18 @@ def parse_args() -> argparse.Namespace:
         default=640,
         help="Image size for inference in pixels (e.g., 640)",
     )
+    ap.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        help="Optional: Path to CSV file to log metrics.",
+    )
+    ap.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Optional: Path to JSON file to save final summary.",
+    )
     return ap.parse_args()
 
 
@@ -89,9 +98,25 @@ def main() -> None:
     )
     tracker = MultiObjectTracker()
     annotator = Annotator()
+    metrics_emitter = SecondBasedEmitter(interval_seconds=1)
+
+    csv_path = Path(args.csv) if args.csv else None
+    csv_header = [
+        "timestamp",
+        "line_in",
+        "line_out",
+        "roi_current",
+        "roi_unique",
+    ]
 
     source = int(args.source) if args.source.isdigit() else args.source
     cap = None
+    lc, rc = None, None  # Define here to be accessible in finally block
+    frame_count = 0
+    total_line_in = 0
+    total_line_out = 0
+    last_roi_counts = {"present": 0, "unique_ids": 0}
+
     try:
         cap = cv2.VideoCapture(source)
         if not cap.isOpened():
@@ -112,13 +137,16 @@ def main() -> None:
             ]
         )
 
-        last_print_time = time.time()
-
         while ret:
+            frame_count += 1
             detections = detector.predict(frame)
             tracks = tracker.update(frame, detections)
-            line_counts = lc.update(tracks)
-            roi_counts = rc.update(tracks)
+
+            line_counts_delta = lc.update(tracks)
+            total_line_in += line_counts_delta["a_to_b"]
+            total_line_out += line_counts_delta["b_to_a"]
+
+            last_roi_counts = rc.update(tracks)
 
             # --- Visualizations ---
             frame = annotator.annotate(
@@ -132,40 +160,79 @@ def main() -> None:
             white_color = (255, 255, 255)
             black_color = (0, 0, 0)
 
-            # Metrics overlay (top-left)
             metrics_text = (
                 f"Pessoas: {len(detections)} | IDs: {len(tracks)} | "
-                f"A->B: {line_counts['a_to_b']} | B->A: {line_counts['b_to_a']} | "
-                f"ROI: {roi_counts['present']}/{roi_counts['unique_ids']}"
+                f"A->B: {total_line_in} | B->A: {total_line_out} | "
+                f"ROI: {last_roi_counts['present']}/{last_roi_counts['unique_ids']}"
             )
-            cv2.putText(frame, metrics_text, (11, 21), font, font_scale, black_color, font_thickness + 1, cv2.LINE_AA)
-            cv2.putText(frame, metrics_text, (10, 20), font, font_scale, white_color, font_thickness, cv2.LINE_AA)
+            cv2.putText(
+                frame,
+                metrics_text,
+                (11, 21),
+                font,
+                font_scale,
+                black_color,
+                font_thickness + 1,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                frame,
+                metrics_text,
+                (10, 20),
+                font,
+                font_scale,
+                white_color,
+                font_thickness,
+                cv2.LINE_AA,
+            )
 
-            # Legend overlay (bottom-left)
             legend_lines = [
-                "Linha vermelha tracejada (A-B): linha usada pelo LineCounter para detectar cruzamentos.",
-                "Retangulo verde: ROI (regiao de interesse) onde contamos presentes e IDs unicos.",
+                "Linha vermelha (A-B): contagem de cruzamentos.",
+                "Retangulo verde: contagem de ocupação na área.",
                 "Caixa azul: bounding box da pessoa detectada (com ID).",
-                "Ponto azul: centro do bounding box, usado para lado da linha e ROI.",
+                "Ponto azul: centro do bounding box, usado para contagem.",
             ]
             base_y = h - 70
             for i, line in enumerate(legend_lines):
                 y = base_y + i * 18
-                cv2.putText(frame, line, (11, y + 1), font, font_scale, black_color, font_thickness, cv2.LINE_AA)
-                cv2.putText(frame, line, (10, y), font, font_scale, white_color, font_thickness, cv2.LINE_AA)
-
-
-            current_time = time.time()
-            if current_time - last_print_time >= 1.0:
-                print(
-                    f"Pessoas detectadas: {len(detections)} | "
-                    f"IDs ativos: {len(tracks)} | "
-                    f"A->B: {line_counts['a_to_b']} | "
-                    f"B->A: {line_counts['b_to_a']} | "
-                    f"ROI (presente/unicos): {roi_counts['present']}/"
-                    f"{roi_counts['unique_ids']}"
+                cv2.putText(
+                    frame,
+                    line,
+                    (11, y + 1),
+                    font,
+                    font_scale,
+                    black_color,
+                    font_thickness,
+                    cv2.LINE_AA,
                 )
-                last_print_time = current_time
+                cv2.putText(
+                    frame,
+                    line,
+                    (10, y),
+                    font,
+                    font_scale,
+                    white_color,
+                    font_thickness,
+                    cv2.LINE_AA,
+                )
+
+            # --- Telemetry (JSON/CSV logging) ---
+            def emit_metrics():
+                metrics_data = {
+                    "timestamp": int(time.time()),
+                    "line_in": total_line_in,
+                    "line_out": total_line_out,
+                    "roi_current": last_roi_counts["present"],
+                    "roi_unique": last_roi_counts["unique_ids"],
+                }
+                # Print JSON to stdout
+                print(json.dumps(metrics_data))
+
+                # Append to CSV if enabled
+                if csv_path:
+                    append_to_csv(csv_path, metrics_data, header_columns=csv_header)
+
+            metrics_emitter.tick(emit_metrics)
 
             cv2.imshow("People Counter - press q to quit", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -179,6 +246,18 @@ def main() -> None:
         if cap:
             cap.release()
         cv2.destroyAllWindows()
+
+        # --- Final Summary ---
+        if args.out and lc and rc:
+            summary_path = Path(args.out)
+            summary_data = {
+                "total_frames": frame_count,
+                "line_in": total_line_in,
+                "line_out": total_line_out,
+                "roi_total_unique": len(rc._seen),
+            }
+            print(f"Salvando resumo final em: {summary_path}")
+            write_summary_json(summary_path, summary_data)
 
 
 if __name__ == "__main__":

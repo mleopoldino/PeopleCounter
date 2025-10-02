@@ -4,6 +4,7 @@ draw.py - Manages all frame annotations for visualization.
 This module centralizes drawing logic using the 'supervision' library's
 annotators for consistency and clarity.
 """
+
 from __future__ import annotations
 
 from typing import List
@@ -40,7 +41,10 @@ class Annotator:
             text_position=sv.Position.TOP_LEFT,
         )
         self.trace_annotator = sv.TraceAnnotator(
-            color=sv.Color.BLUE, position=sv.Position.CENTER, trace_length=30, thickness=2
+            color=sv.Color.BLUE,
+            position=sv.Position.CENTER,
+            trace_length=30,
+            thickness=2,
         )
 
     def annotate(

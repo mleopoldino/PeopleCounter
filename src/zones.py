@@ -1,17 +1,17 @@
 """
 zones.py - Defines counting zones (Line, ROI) for object tracking.
 """
+
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import cv2
 import numpy as np
 
-try:
+
+if TYPE_CHECKING:
     from .track import Track
-except ImportError:
-    from track import Track
 
 __all__ = ["LineCounter", "RoiCounter"]
 
@@ -48,7 +48,9 @@ class LineCounter:
         self._ab = self._b - self._a
         self._ab_len = float(np.linalg.norm(self._ab))
         if self._ab_len == 0.0:
-            raise ValueError("LineCounter requires two distinct points to define a line")
+            raise ValueError(
+                "LineCounter requires two distinct points to define a line"
+            )
 
         # Pixel threshold: treat points closer than eps to the line as 'on the line'
         self._eps: float = 2.0
